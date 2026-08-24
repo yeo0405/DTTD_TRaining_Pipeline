@@ -1,0 +1,13 @@
+torch==2.9.1 
+torchvision==0.24.1
+torchaudio==2.9.1
+numpy
+einops
+pillow
+scipy
+opencv_python
+tensorboard
+tqdm
+pandas
+protobuf>=3.19.6,<4.24.0
+# knn-cuda @ https://github.com/unlimblue/KNN_CUDA/releases/download/0.2/KNN_CUDA-0.2-py3-none-any.whl
