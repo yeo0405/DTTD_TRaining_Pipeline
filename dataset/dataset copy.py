@@ -10,12 +10,6 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from PIL import Image
 
-try:
-    from plyfile import PlyData
-except ImportError:
-    PlyData = None
-
-
 Borderlist = [-1] + list(range(40, 1960, 40))
 
 
@@ -101,18 +95,10 @@ class DTTDDataset(data.Dataset):
             img = self.trancolor(img)
 
         img = np.array(img)
-        objs = np.asarray(
-            meta["objects"],
-            dtype=np.int32,
-        ).flatten()
+        objs = np.asarray(meta["objects"], dtype=np.int32).flatten()
 
         if len(objs) == 0:
-            return self._get_negative_sample(
-                img,
-                label,
-                depth,
-                meta,
-            )
+            return self._get_negative_sample(img, label, depth, meta)
 
         obj_indices = list(range(len(objs)))
         random.shuffle(obj_indices)
@@ -120,13 +106,8 @@ class DTTDDataset(data.Dataset):
 
         for obj_idx in obj_indices:
             obj_id = int(objs[obj_idx])
-
-            mask_depth = ma.getmaskarray(
-                ma.masked_not_equal(depth, 0)
-            )
-            mask_label = ma.getmaskarray(
-                ma.masked_equal(label, obj_id)
-            )
+            mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
+            mask_label = ma.getmaskarray(ma.masked_equal(label, obj_id))
 
             mask = (
                 mask_label * mask_depth
@@ -134,29 +115,20 @@ class DTTDDataset(data.Dataset):
                 else mask_depth
             )
 
-            valid_px = int(
-                (mask_label * mask_depth).sum()
-            )
-
+            valid_px = int((mask_label * mask_depth).sum())
             if valid_px > self.minimum_px_num:
                 obj_found = True
                 break
 
         if not obj_found:
-            return self._get_negative_sample(
-                img,
-                label,
-                depth,
-                meta,
-            )
+            return self._get_negative_sample(img, label, depth, meta)
 
         obj_id = int(objs[obj_idx])
 
         if obj_id not in self.model_points:
             raise RuntimeError(
                 f"Model points not found for object ID {obj_id}.\n"
-                f"Available model point IDs: "
-                f"{sorted(self.model_points.keys())}\n"
+                f"Available model point IDs: {sorted(self.model_points.keys())}\n"
                 f"Sample: {self.all_data_dirs[index]}"
             )
 
@@ -164,12 +136,10 @@ class DTTDDataset(data.Dataset):
             meta["object_poses"][str(obj_id)],
             dtype=np.float32,
         )
-
         R_gt = pose[0:3, 0:3]
         T_gt = pose[0:3, 3:4].T
 
         model_points = self.model_points[obj_id]
-
         required_points = (
             self.pt_num_mesh_large
             if self.refine
@@ -184,23 +154,17 @@ class DTTDDataset(data.Dataset):
                 f"Sample    : {self.all_data_dirs[index]}"
             )
 
+        model_sample_list = list(range(len(model_points)))
         model_sample_list = sorted(
-            random.sample(
-                range(len(model_points)),
-                required_points,
-            )
+            random.sample(model_sample_list, required_points)
         )
 
         sampled_model_pt = np.asarray(
             model_points[model_sample_list, :],
             dtype=np.float32,
         )
-
         sampled_model_pt_world = np.add(
-            np.dot(
-                sampled_model_pt,
-                R_gt.T,
-            ),
+            np.dot(sampled_model_pt, R_gt.T),
             T_gt,
         )
 
@@ -229,41 +193,29 @@ class DTTDDataset(data.Dataset):
                 dtype=np.int64,
             )
         elif len(sample2D) == 0:
-            sample2D = np.zeros(
-                self.sample_2d_pt_num,
-                dtype=np.int64,
-            )
+            sample2D = np.zeros(self.sample_2d_pt_num, dtype=np.int64)
         else:
             sample2D = np.pad(
                 sample2D,
-                (
-                    0,
-                    self.sample_2d_pt_num - len(sample2D),
-                ),
+                (0, self.sample_2d_pt_num - len(sample2D)),
                 mode="wrap",
             ).astype(np.int64)
 
         img_crop = np.transpose(
             img[:, :, :3],
             (2, 0, 1),
-        )[
-            :,
-            rmin:rmax,
-            cmin:cmax,
-        ]
+        )[:, rmin:rmax, cmin:cmax]
 
         depth_crop = (
             depth[rmin:rmax, cmin:cmax]
             .flatten()[sample2D][:, None]
             .astype(np.float32)
         )
-
         xmap_crop = (
             xmap[rmin:rmax, cmin:cmax]
             .flatten()[sample2D][:, None]
             .astype(np.float32)
         )
-
         ymap_crop = (
             ymap[rmin:rmax, cmin:cmax]
             .flatten()[sample2D][:, None]
@@ -272,43 +224,20 @@ class DTTDDataset(data.Dataset):
 
         cam_scale = 1000.0
         pz = depth_crop / cam_scale
-        px = (
-            (ymap_crop - cam_cx)
-            * pz
-            / cam_fx
-        )
-        py = (
-            (xmap_crop - cam_cy)
-            * pz
-            / cam_fy
-        )
+        px = (ymap_crop - cam_cx) * pz / cam_fx
+        py = (xmap_crop - cam_cy) * pz / cam_fy
 
-        point_cloud = np.concatenate(
-            (
-                px,
-                py,
-                pz,
-            ),
-            axis=1,
-        )
+        point_cloud = np.concatenate((px, py, pz), axis=1)
 
         if self.add_noise:
             add_noise_t = np.array(
                 [
-                    random.uniform(
-                        -self.noise_trans,
-                        self.noise_trans,
-                    )
+                    random.uniform(-self.noise_trans, self.noise_trans)
                     for _ in range(3)
                 ],
                 dtype=np.float32,
             )
-
-            point_cloud = np.add(
-                point_cloud,
-                add_noise_t,
-            )
-
+            point_cloud = np.add(point_cloud, add_noise_t)
             sampled_model_pt_world = np.add(
                 sampled_model_pt_world,
                 add_noise_t,
@@ -317,19 +246,11 @@ class DTTDDataset(data.Dataset):
         return {
             "img": torch.from_numpy(img),
             "label": torch.from_numpy(label),
-            "depth": torch.from_numpy(
-                depth.astype(np.float32)
-            ),
-            "point_cloud": torch.from_numpy(
-                point_cloud.astype(np.float32)
-            ),
-            "sample_2d": torch.from_numpy(
-                sample2D.astype(np.int64)
-            ),
+            "depth": torch.from_numpy(depth.astype(np.float32)),
+            "point_cloud": torch.from_numpy(point_cloud.astype(np.float32)),
+            "sample_2d": torch.from_numpy(sample2D.astype(np.int64)),
             "img_crop": self.norm(
-                torch.from_numpy(
-                    img_crop.astype(np.float32)
-                )
+                torch.from_numpy(img_crop.astype(np.float32))
             ),
             "sampled_model_pt_camera": torch.from_numpy(
                 sampled_model_pt_world.astype(np.float32)
@@ -337,51 +258,27 @@ class DTTDDataset(data.Dataset):
             "sampled_model_pt": torch.from_numpy(
                 sampled_model_pt.astype(np.float32)
             ),
-            "obj_id": torch.LongTensor(
-                [obj_id - 1]
-            ),
-            "R": torch.from_numpy(
-                R_gt.astype(np.float32)
-            ),
-            "T": torch.from_numpy(
-                T_gt.astype(np.float32)
-            ),
+            "obj_id": torch.LongTensor([obj_id - 1]),
+            "R": torch.from_numpy(R_gt.astype(np.float32)),
+            "T": torch.from_numpy(T_gt.astype(np.float32)),
         }
 
-    def _get_negative_sample(
-        self,
-        img,
-        label,
-        depth,
-        meta,
-    ):
+    def _get_negative_sample(self, img, label, depth, meta):
         img_h, img_w = label.shape
-
         rmin, rmax = 0, min(img_h, 400)
         cmin, cmax = 0, min(img_w, 400)
 
         img_crop = np.transpose(
             np.asarray(img)[:, :, :3],
             (2, 0, 1),
-        )[
-            :,
-            rmin:rmax,
-            cmin:cmax,
-        ]
+        )[:, rmin:rmax, cmin:cmax]
 
         return {
-            "img": torch.from_numpy(
-                np.asarray(img)
-            ),
+            "img": torch.from_numpy(np.asarray(img)),
             "label": torch.from_numpy(label),
-            "depth": torch.from_numpy(
-                depth.astype(np.float32)
-            ),
+            "depth": torch.from_numpy(depth.astype(np.float32)),
             "point_cloud": torch.zeros(
-                (
-                    self.sample_2d_pt_num,
-                    3,
-                ),
+                (self.sample_2d_pt_num, 3),
                 dtype=torch.float32,
             ),
             "sample_2d": torch.zeros(
@@ -389,33 +286,19 @@ class DTTDDataset(data.Dataset):
                 dtype=torch.long,
             ),
             "img_crop": self.norm(
-                torch.from_numpy(
-                    img_crop.astype(np.float32)
-                )
+                torch.from_numpy(img_crop.astype(np.float32))
             ),
             "sampled_model_pt_camera": torch.zeros(
-                (
-                    self.get_model_point_num(),
-                    3,
-                ),
+                (self.get_model_point_num(), 3),
                 dtype=torch.float32,
             ),
             "sampled_model_pt": torch.zeros(
-                (
-                    self.get_model_point_num(),
-                    3,
-                ),
+                (self.get_model_point_num(), 3),
                 dtype=torch.float32,
             ),
             "obj_id": torch.LongTensor([-1]),
-            "R": torch.eye(
-                3,
-                dtype=torch.float32,
-            ),
-            "T": torch.zeros(
-                (1, 3),
-                dtype=torch.float32,
-            ),
+            "R": torch.eye(3, dtype=torch.float32),
+            "T": torch.zeros((1, 3), dtype=torch.float32),
             "is_negative_sample": True,
         }
 
@@ -424,24 +307,10 @@ class DTTDDataset(data.Dataset):
         self.use_labelmask = True
         self.debug_mode = False
 
-        self.trancolor = transforms.ColorJitter(
-            0.2,
-            0.2,
-            0.2,
-            0.05,
-        )
-
+        self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
         self.norm = transforms.Normalize(
-            mean=[
-                0.485,
-                0.456,
-                0.406,
-            ],
-            std=[
-                0.229,
-                0.224,
-                0.225,
-            ],
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
         )
 
         self.noise_trans = 0.02
@@ -458,52 +327,31 @@ class DTTDDataset(data.Dataset):
         elif self.mode == "test":
             self.data_list_path = self.Testlist
         else:
-            raise NotImplementedError(
-                f"Unsupported mode: {self.mode}"
-            )
+            raise NotImplementedError(f"Unsupported mode: {self.mode}")
 
         self.class_path = self.Classlist
 
-        with open(
-            self.data_list_path,
-            "r",
-        ) as f:
+        with open(self.data_list_path, "r") as f:
             self.all_data_dirs = [
-                line.strip()
-                for line in f
-                if line.strip()
+                line.strip() for line in f if line.strip()
             ]
 
         self.real_data_dirs = [
-            d
-            for d in self.all_data_dirs
-            if d.startswith("scene")
+            d for d in self.all_data_dirs if d.startswith("scene")
         ]
-
         self.syn_data_dirs = [
-            d
-            for d in self.all_data_dirs
-            if d.startswith("synthetic/data")
+            d for d in self.all_data_dirs if d.startswith("synthetic/data")
         ]
 
-        self.classes = pd.read_csv(
-            self.class_path,
-            index_col="id",
-        )
-
+        self.classes = pd.read_csv(self.class_path, index_col="id")
         self.symmetry_obj_cls = []
 
         if "symmetry" in self.classes.columns:
             for idx, row in self.classes.iterrows():
                 if int(row["symmetry"]) == 1:
-                    self.symmetry_obj_cls.append(
-                        int(idx) - 1
-                    )
+                    self.symmetry_obj_cls.append(int(idx) - 1)
 
-        print(
-            "[Dataset] Symmetric objects:",
-            self.symmetry_obj_cls,
-        )
+        print("[Dataset] Symmetric objects:", self.symmetry_obj_cls)
 
     def load_points(self, root, classes):
         model_points = {}
@@ -515,135 +363,47 @@ class DTTDDataset(data.Dataset):
 
         for idx, cls in classes.iterrows():
             obj_id = int(idx)
-
-            obj_dir = os.path.join(
+            cls_filepath = os.path.join(
                 root,
                 "objects",
                 str(cls["name"]),
-            )
-
-            ply_path = os.path.join(
-                obj_dir,
-                "points.ply",
-            )
-
-            xyz_path = os.path.join(
-                obj_dir,
                 "points.xyz",
             )
 
-            try:
-                if os.path.isfile(ply_path):
-                    if PlyData is None:
-                        raise RuntimeError(
-                            "plyfile is not installed. "
-                            "Run: pip install plyfile"
-                        )
-
-                    ply = PlyData.read(ply_path)
-
-                    if "vertex" not in ply:
-                        raise RuntimeError(
-                            "PLY does not contain vertex data"
-                        )
-
-                    vertex = ply["vertex"].data
-                    fields = vertex.dtype.names or ()
-
-                    if not {
-                        "x",
-                        "y",
-                        "z",
-                    }.issubset(fields):
-                        raise RuntimeError(
-                            f"PLY vertex fields {fields} "
-                            f"do not contain x/y/z"
-                        )
-
-                    points = np.column_stack(
-                        (
-                            vertex["x"],
-                            vertex["y"],
-                            vertex["z"],
-                        )
-                    ).astype(
-                        np.float32,
-                        copy=False,
-                    )
-
-                    source = ply_path
-
-                elif os.path.isfile(xyz_path):
-                    points = np.loadtxt(
-                        xyz_path,
-                        dtype=np.float32,
-                    )
+            if os.path.isfile(cls_filepath):
+                try:
+                    points = np.loadtxt(cls_filepath, dtype=np.float32)
+                    points = np.asarray(points)
 
                     if points.ndim == 1:
-                        points = points.reshape(
-                            1,
-                            -1,
+                        points = points.reshape(1, -1)
+
+                    if points.ndim != 2 or points.shape[1] != 3:
+                        print(
+                            f"[ERROR] Object {obj_id:3d} | "
+                            f"Invalid points shape {points.shape} | "
+                            f"{cls_filepath}"
                         )
+                        continue
 
-                    if (
-                        points.ndim != 2
-                        or points.shape[1] < 3
-                    ):
-                        raise RuntimeError(
-                            f"Invalid XYZ shape: "
-                            f"{points.shape}"
-                        )
-
-                    points = points[:, :3]
-                    source = xyz_path
-
-                else:
+                    model_points[obj_id] = points
                     print(
-                        f"[MISSING] Object {obj_id:3d} | "
-                        f"{ply_path} / {xyz_path}"
+                        f"[OK] Object {obj_id:3d} | "
+                        f"{len(points):6d} points | "
+                        f"{cls_filepath}"
                     )
-                    continue
-
-                if (
-                    points.ndim != 2
-                    or points.shape[1] != 3
-                ):
-                    raise RuntimeError(
-                        f"Invalid point shape: "
-                        f"{points.shape}"
+                except Exception as e:
+                    print(
+                        f"[ERROR] Object {obj_id:3d} | Failed to load | "
+                        f"{cls_filepath}\n        {e}"
                     )
-
-                if len(points) == 0:
-                    raise RuntimeError(
-                        "No points found"
-                    )
-
-                if not np.isfinite(points).all():
-                    raise RuntimeError(
-                        "Points contain NaN or Inf"
-                    )
-
-                model_points[obj_id] = points
-
-                print(
-                    f"[OK] Object {obj_id:3d} | "
-                    f"{len(points):6d} points | "
-                    f"{source}"
-                )
-
-            except Exception as e:
-                print(
-                    f"[ERROR] Object {obj_id:3d} | "
-                    f"Failed to load model points:\n"
-                    f"        {e}"
-                )
+            else:
+                print(f"[MISSING] Object {obj_id:3d} | {cls_filepath}")
 
         print(
             f"Loaded model points: "
-            f"{len(model_points)} / "
-            f"{len(classes)} objects"
+            f"{len(model_points)} / {len(classes)} objects"
         )
-
         print("=" * 70)
         print()
 
@@ -663,99 +423,45 @@ class DTTDDataset(data.Dataset):
                 continue
 
             try:
-                with open(
-                    meta_path,
-                    "r",
-                ) as f:
+                with open(meta_path, "r") as f:
                     meta = json.load(f)
 
-                for obj_id in meta.get(
-                    "objects",
-                    [],
-                ):
-                    dataset_object_ids.add(
-                        int(obj_id)
-                    )
-
+                for obj_id in meta.get("objects", []):
+                    dataset_object_ids.add(int(obj_id))
             except Exception as e:
                 print(
-                    f"[WARNING] Failed to read metadata: "
-                    f"{meta_path}\n"
+                    f"[WARNING] Failed to read metadata: {meta_path}\n"
                     f"          {e}"
                 )
 
-        model_point_ids = set(
-            int(k)
-            for k in self.model_points.keys()
-        )
-
-        missing_ids = sorted(
-            dataset_object_ids - model_point_ids
-        )
+        model_point_ids = set(int(k) for k in self.model_points.keys())
+        missing_ids = sorted(dataset_object_ids - model_point_ids)
 
         print()
         print("=" * 70)
         print("MODEL POINT VALIDATION")
         print("=" * 70)
-
-        print(
-            "Dataset object IDs :",
-            sorted(dataset_object_ids),
-        )
-
-        print(
-            "Model point IDs    :",
-            sorted(model_point_ids),
-        )
+        print("Dataset object IDs :", sorted(dataset_object_ids))
+        print("Model point IDs    :", sorted(model_point_ids))
 
         if missing_ids:
-            print(
-                "[ERROR] Missing model points "
-                "for object IDs:",
-                missing_ids,
-            )
-
+            print("[ERROR] Missing model points for object IDs:", missing_ids)
             for obj_id in missing_ids:
                 if obj_id in self.classes.index:
-                    name = self.classes.loc[
-                        obj_id,
-                        "name",
-                    ]
-
-                    expected_ply = os.path.join(
-                        self.root,
-                        "objects",
-                        str(name),
-                        "points.ply",
-                    )
-
-                    expected_xyz = os.path.join(
+                    name = self.classes.loc[obj_id, "name"]
+                    expected_path = os.path.join(
                         self.root,
                         "objects",
                         str(name),
                         "points.xyz",
                     )
-
-                    print(
-                        f"  Object {obj_id}:"
-                    )
-                    print(
-                        f"    PLY: {expected_ply}"
-                    )
-                    print(
-                        f"    XYZ: {expected_xyz}"
-                    )
+                    print(f"  Object {obj_id}: {expected_path}")
 
             raise RuntimeError(
-                "Dataset contains objects without "
-                "corresponding model points."
+                "Dataset contains objects without corresponding model points."
             )
 
-        print(
-            "[OK] All dataset objects "
-            "have model points."
-        )
-
+        print("[OK] All dataset objects have model points.")
         print("=" * 70)
         print()
 
@@ -768,35 +474,21 @@ class DTTDDataset(data.Dataset):
     def get_model_point_num(self):
         if self.refine:
             return self.pt_num_mesh_large
-
         return self.pt_num_mesh_small
 
     def get_2d_sample_num(self):
         return self.sample_2d_pt_num
 
 
-def get_discrete_width_bbox(
-    label,
-    border_list,
-    img_w,
-    img_h,
-):
+def get_discrete_width_bbox(label, border_list, img_w, img_h):
     rows = np.any(label, axis=1)
     cols = np.any(label, axis=0)
 
     row_indices = np.where(rows)[0]
     col_indices = np.where(cols)[0]
 
-    if (
-        len(row_indices) == 0
-        or len(col_indices) == 0
-    ):
-        return (
-            0,
-            min(img_h, 1),
-            0,
-            min(img_w, 1),
-        )
+    if len(row_indices) == 0 or len(col_indices) == 0:
+        return (0, min(img_h, 1), 0, min(img_w, 1))
 
     rmin, rmax = row_indices[[0, -1]]
     cmin, cmax = col_indices[[0, -1]]
@@ -804,19 +496,8 @@ def get_discrete_width_bbox(
     rmax += 1
     cmax += 1
 
-    r_b = border_list[
-        binary_search(
-            border_list,
-            rmax - rmin,
-        )
-    ]
-
-    c_b = border_list[
-        binary_search(
-            border_list,
-            cmax - cmin,
-        )
-    ]
+    r_b = border_list[binary_search(border_list, rmax - rmin)]
+    c_b = border_list[binary_search(border_list, cmax - cmin)]
 
     center = [
         int((rmin + rmax) / 2),
@@ -853,44 +534,19 @@ def get_discrete_width_bbox(
     rmax = min(img_h, rmax)
     cmax = min(img_w, cmax)
 
-    return (
-        rmin,
-        rmax,
-        cmin,
-        cmax,
-    )
+    return rmin, rmax, cmin, cmax
 
 
-def discretize_bbox(
-    rmin,
-    rmax,
-    cmin,
-    cmax,
-    border_list,
-    img_w,
-    img_h,
-):
+def discretize_bbox(rmin, rmax, cmin, cmax, border_list, img_w, img_h):
     rmax += 1
     cmax += 1
 
-    r_b = border_list[
-        binary_search(
-            border_list,
-            rmax - rmin,
-        )
-    ]
-
-    c_b = border_list[
-        binary_search(
-            border_list,
-            cmax - cmin,
-        )
-    ]
+    r_b = border_list[binary_search(border_list, rmax - rmin)]
+    c_b = border_list[binary_search(border_list, cmax - cmin)]
 
     center = [
         int((rmin + rmax) / 2),
-        int((cmin + cmax) / 2,
-        ),
+        int((cmin + cmax) / 2),
     ]
 
     rmin = center[0] - int(r_b / 2)
@@ -923,24 +579,15 @@ def discretize_bbox(
     rmax = min(img_h, rmax)
     cmax = min(img_w, cmax)
 
-    return (
-        rmin,
-        rmax,
-        cmin,
-        cmax,
-    )
+    return rmin, rmax, cmin, cmax
 
 
-def binary_search(
-    sorted_list,
-    target,
-):
+def binary_search(sorted_list, target):
     left = 0
     right = len(sorted_list) - 1
 
     while left != right:
         mid = (left + right) >> 1
-
         if sorted_list[mid] > target:
             right = mid
         elif sorted_list[mid] < target:
@@ -963,20 +610,9 @@ if __name__ == "__main__":
     print("DATASET TEST")
     print("=" * 70)
 
-    print(
-        "Dataset length:",
-        len(dataset),
-    )
-
-    print(
-        "Prefix:",
-        dataset.prefix,
-    )
-
-    print(
-        "Model point IDs:",
-        sorted(dataset.model_points.keys()),
-    )
+    print("Dataset length:", len(dataset))
+    print("Prefix:", dataset.prefix)
+    print("Model point IDs:", sorted(dataset.model_points.keys()))
 
     dt = dataset[0]
 
@@ -985,16 +621,9 @@ if __name__ == "__main__":
 
     for key, value in dt.items():
         if torch.is_tensor(value):
-            print(
-                f"  {key:30s} "
-                f"{tuple(value.shape)} "
-                f"{value.dtype}"
-            )
+            print(f"  {key:30s} {tuple(value.shape)} {value.dtype}")
         else:
-            print(
-                f"  {key:30s} "
-                f"{type(value)}"
-            )
+            print(f"  {key:30s} {type(value)}")
 
     print()
     print("Dataset test finished.")

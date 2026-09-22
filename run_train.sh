@@ -6,10 +6,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 DATASET_ROOT=/home/yeo/Downloads/POSE/dataset
 DATASET_CONFIG=/home/yeo/Downloads/POSE/dataset/dataset_config
-OUTPUT_DIR=./result_small_AUG20
+OUTPUT_DIR=./result_SEP04
 
 # Pretrained model
-PRETRAIN="./result_small_AUG19_m2p1_0821-xxxx/checkpoints/best.pth"
+# PRETRAIN="./result_small_AUG19_m2p1_0821-xxxx/checkpoints/best.pth"
 
 
 # =========================================================
@@ -110,4 +110,4 @@ python train.py \
     --nepoch "$NEPOCH" \
     --warm_epoch "$WARM_EPOCH" \
     --filter_enhance \
-    ${PRETRAIN:+--pretrain "$PRETRAIN"}
+    # ${PRETRAIN:+--pretrain "$PRETRAIN"}
