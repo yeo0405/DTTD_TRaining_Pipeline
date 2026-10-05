@@ -233,7 +233,11 @@ def main():
 
         except Exception as e:
             failed_frames += 1
-            print(f"\n[ERROR] frame={frame_id}: {e}")
+            print(f"\n[ERROR] frame={frame_id}")
+            print(f"Exception type: {type(e).__name__}")
+            print(f"Exception repr: {repr(e)}")
+            import traceback
+            traceback.print_exc()
 
     print()
     print("=" * 70)

@@ -7,12 +7,11 @@ set -e
 
 PYTHON="python"
 
-BOP_DATA_PATH="/home/yeo/Downloads/BlenderporcGenaratedDataset/all_object_random_block/bop_data/hb"
+INPUT_DIR="/home/yeo/Downloads/FoundationPose/dataset/iphone_14_pro_max_rotation"
 OBJECTS_SOURCE_PATH="/home/yeo/Downloads/DTTD_obj/iphone_with_box"
-OUTPUT_DIR="/home/yeo/Downloads/POSE/dataset_all_object_random_block"
+OUTPUT_DIR="/home/yeo/Downloads/POSE/iphone_14_pro_max_rotation"
 
-OBJ_ID=0
-MIN_VISIBLE_RATIO="0.0"
+OBJ_ID=4
 
 SPLIT_RATIO="0.8"
 SEED="42"
@@ -42,20 +41,20 @@ log_success() {
 
 log_info "Validating configuration..."
 
-if [ ! -d "$BOP_DATA_PATH" ]; then
-    log_error "BOP_DATA_PATH does not exist: $BOP_DATA_PATH"
+if [ ! -d "$INPUT_DIR" ]; then
+    log_error "INPUT_DIR does not exist: $INPUT_DIR"
 fi
 
 if [ ! -d "$OBJECTS_SOURCE_PATH" ]; then
     log_error "OBJECTS_SOURCE_PATH does not exist: $OBJECTS_SOURCE_PATH"
 fi
 
-if [ ! -f "$SCRIPT_DIR/transfer.py" ]; then
-    log_error "transfer.py not found in SCRIPT_DIR: $SCRIPT_DIR"
+if [ ! -f "$SCRIPT_DIR/foundation_pose_to_training.py" ]; then
+    log_error "foundation_pose_to_training.py not found: $SCRIPT_DIR/foundation_pose_to_training.py"
 fi
 
 if [ ! -f "$SCRIPT_DIR/val_split.py" ]; then
-    log_error "val_split.py not found in SCRIPT_DIR: $SCRIPT_DIR"
+    log_error "val_split.py not found: $SCRIPT_DIR/val_split.py"
 fi
 
 log_success "Configuration validated"
@@ -69,11 +68,10 @@ log_info "========================================================="
 log_info "Data Preprocessing Configuration"
 log_info "========================================================="
 log_info "PYTHON              : $PYTHON"
-log_info "BOP_DATA_PATH       : $BOP_DATA_PATH"
+log_info "INPUT_DIR           : $INPUT_DIR"
 log_info "OBJECTS_SOURCE_PATH : $OBJECTS_SOURCE_PATH"
 log_info "OUTPUT_DIR          : $OUTPUT_DIR"
 log_info "OBJ_ID              : $OBJ_ID"
-log_info "MIN_VISIBLE_RATIO  : $MIN_VISIBLE_RATIO"
 log_info "SPLIT_RATIO         : $SPLIT_RATIO"
 log_info "SEED                : $SEED"
 log_info "SCRIPT_DIR          : $SCRIPT_DIR"
@@ -109,14 +107,12 @@ mkdir -p "$OUTPUT_DIR/dataset_config"
     idx=1
 
     while IFS= read -r obj_dir; do
-
         name="$(basename "$obj_dir")"
         symmetry=0
 
         echo "${idx},${name},${symmetry}"
 
         idx=$((idx + 1))
-
     done < <(
         find "$OBJECTS_SOURCE_PATH" \
             -mindepth 1 \
@@ -130,16 +126,15 @@ mkdir -p "$OUTPUT_DIR/dataset_config"
 log_success "Step 1 completed: $OBJECTIDS_CSV"
 
 # ============================================================
-# Step 2: Convert BOP -> DTTD
+# Step 2: Convert FoundationPose -> DTTD
 # ============================================================
 
-log_info "Step 2: Converting BOP format to DTTD format..."
+log_info "Step 2: Converting FoundationPose format to DTTD format..."
 
-$PYTHON "$SCRIPT_DIR/transfer.py" \
-    --bop_data_path "$BOP_DATA_PATH" \
+$PYTHON "$SCRIPT_DIR/foundation_pose_to_training.py" \
+    --input_dir "$INPUT_DIR" \
     --output_dir "$OUTPUT_DIR" \
-    --obj_id "$OBJ_ID" \
-    --min_visible_ratio "$MIN_VISIBLE_RATIO"
+    --obj_id "$OBJ_ID"
 
 log_success "Step 2 completed"
 
